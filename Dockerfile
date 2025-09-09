@@ -19,10 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------
-# Install Ollama CLI/binary
+# Install Ollama binary
 # -----------------------
-RUN curl -fsSL https://ollama.com/install.sh | sh
-ENV PATH="/root/.ollama/bin:${PATH}"
+RUN curl -L https://github.com/ollama/ollama/releases/latest/download/ollama-linux-amd64 \
+    -o /usr/local/bin/ollama \
+ && chmod +x /usr/local/bin/ollama
 
 # -----------------------
 # App code & Python deps
@@ -36,12 +37,8 @@ COPY handler.py /app/handler.py
 RUN chmod +x /app/start.sh
 
 # -----------------------
-# Optional: Pre-pull a quantized model
+# Optional: Pre-pull smaller model for testing
 # -----------------------
-# RUN ollama pull llama3:8b   # (test with smaller model first)
-# RUN ollama pull llama3:70b-q4_K_M   # (quantized)
+# RUN ollama pull llama3:8b
 
-# -----------------------
-# Entrypoint
-# -----------------------
 CMD ["/app/start.sh"]
