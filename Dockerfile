@@ -1,40 +1,63 @@
-# Pick an image with CUDA that matches Runpod worker GPUs; adjust CUDA version as needed.
+# Base image with CUDA runtime suitable for GPUs on Runpod.
+# Adjust CUDA version if Runpod uses a different CUDA runtime for chosen GPU.
 FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV OLLAMA_BIN=/usr/local/bin/ollama
+ENV OLLAMA_PORT=11434
+ENV OLLAMA_HOST=127.0.0.1
 
-# Basic deps
-RUN apt-get update && apt-get install -y \
+# -----------------------
+# System deps
+# -----------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     python3 \
     python3-pip \
     git \
+    jq \
     wget \
-    build-essential \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Ollama (replace with official install command from Ollama if it changes)
-# NOTE: verify latest install method from official Ollama docs.
-RUN curl -fsSL https://ollama.com/download/ollama-linux-amd64.tgz | tar -xvz -C /usr/local/bin
+# -----------------------
+# Install Ollama CLI/binary
+# NOTE: verify latest official install instructions from Ollama.
+# This is a common pattern: download a tarball, extract the executable.
+# -----------------------
+RUN curl -fsSL https://ollama.com/download/ollama-linux-amd64.tgz -o /tmp/ollama.tgz \
+    && tar -xvzf /tmp/ollama.tgz -C /usr/local/bin \
+    && rm /tmp/ollama.tgz || true
 
-# Ensure CLI is executable
-RUN /usr/local/bin/ollama --version || true
+# Ensure ollama is executable
+RUN if [ -f "$OLLAMA_BIN" ]; then $OLLAMA_BIN --version || true; fi
 
-# Optionally pre-pull the model (bakes model into image).
-# WARNING: this drastically increases image size and build time.
-# Uncomment if you have permission and want the image to include the model binary files:
-# RUN ollama pull llama3:70b   # <-- replace with exact Ollama model tag you will use
-
-# Python deps for handler
-COPY requirements.txt /tmp/requirements.txt
-RUN pip3 install -r /tmp/requirements.txt
-
-# Copy start script and handler
+# -----------------------
+# App code & Python deps
+# -----------------------
 WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN pip3 install --no-cache-dir -r /app/requirements.txt
+
 COPY start.sh /app/start.sh
 COPY handler.py /app/handler.py
 RUN chmod +x /app/start.sh
 
-# Expose (no public port needed — we call via Runpod handler)
-CMD [ "/app/start.sh" ]
+# -----------------------
+# Optional: Pre-pull or pre-load a quantized model
+# You may uncomment and adapt one of these blocks if you'd like to bake model files
+# into the docker image. WARNING: This will greatly increase image size and build time.
+#
+# Option A: ollama pull by tag (if Ollama registry supports the tag)
+# RUN ollama pull <my-ollama-tag>
+#
+# Option B: download a quantized GGUF (hosted URL) and place into Ollama models directory
+# ENV QUANT_GGUF_URL="https://my-bucket/path/llama3-70b-q4.gguf"
+# RUN mkdir -p /root/.ollama/models/llama3-70b-q4 \
+#     && curl -L "$QUANT_GGUF_URL" -o /root/.ollama/models/llama3-70b-q4/model.gguf
+#
+# If you want pre-pull, uncomment and set appropriate values before building.
+
+# Expose none publicly — Runpod Serverless uses its own endpoint. Ollama will bind to localhost.
+CMD ["/app/start.sh"]
